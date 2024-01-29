@@ -1,0 +1,341 @@
+#include <SPI.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <TinyGPS++.h>
+#include <SoftwareSerial.h>
+
+SoftwareSerial GPS_SoftSerial(4, 3);
+TinyGPSPlus gps;
+
+volatile float minutes, seconds;
+volatile int degree, secs, mins;m
+
+
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+
+// Declaration for SSD1306 display connected using I2C
+#define OLED_RESET     -1 // Reset pin
+#define SCREEN_ADDRESS 0x3C
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+
+// pulse sensor(1 to 7)
+#define USE_ARDUINO_INTERRUPTS true    // Set-up low-level interrupts for most acurate BPM math
+#include <PulseSensorPlayground.h>     // Includes the PulseSensorPlayground Library
+const int PulseWire =A0;               // 'S' Signal pin connected to A0
+int Threshold = 400;                   // Determine which Signal to "count as a beat" and which to ignore
+PulseSensorPlayground pulseSensor;    // Creates an object
+
+
+//temprature sensor
+float temp;
+int tempPin = 0;
+
+
+//MQ3
+#define MQ3pin 0
+float sensorValue;  //variable to store sensor value
+int buzz=14;
+
+
+
+//WiFi and cloud 
+#include<ESP8266WiFi.h>;
+#include<WiFiClient.h>;
+#include<ThingSpeak.h>;
+const char* ssid="RedmiNote10S";     //your network ssid
+const char* password="12345678";  //your network password
+WiFiClient client;
+unsigned long mychannelNumber =2397785;
+const char* myWriteAPIkey = "JXONOPD2YKYBIJ2J";
+
+
+void setup()
+{
+  Serial.begin(9600);
+  pinMode(buzz,OUTPUT);
+  digitalWrite(buzz,LOW);
+
+  //WiFi and cloud 
+  WiFi.begin(ssid,password);
+  ThingSpeak.begin(client);
+
+  
+  // initialize the OLED object
+  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+    Serial.println(F("SSD1306 allocation failed"));
+    for(;;); // Don't proceed, loop forever
+  }
+
+ // Clear the buffer.
+  display.clearDisplay();
+
+display.setTextSize(1.5);
+display.setTextColor(WHITE);
+display.setCursor(30,10);
+display.println("welcome To");
+display.setCursor(20,23);
+display.println("health care");
+display.setCursor(5,36);
+display.println("monitering system");
+display.display();
+delay(2000);
+display.clearDisplay();
+
+
+// PULSE SENSOR
+  // Configure the PulseSensor object, by assigning our variables to it
+  pulseSensor.analogInput(PulseWire);   
+  pulseSensor.setThreshold(Threshold);   
+
+  // Double-check the "pulseSensor" object was created and began seeing a signal
+  if (pulseSensor.begin()) {
+    Serial.println("PulseSensor object created!");
+  }
+
+  GPS_SoftSerial.begin(9600);
+
+}
+
+void loop()
+{
+ // GPS Sensor 
+ smartDelay(1000); /* Generate precise delay of 1ms */
+        unsigned long start;
+        double lat_val, lng_val, alt_m_val;
+        uint8_t hr_val, min_val, sec_val;
+        bool loc_valid, alt_valid, time_valid;
+        lat_val = gps.location.lat(); /* Get latitude data */
+        loc_valid = gps.location.isValid(); /* Check if valid location data is available */
+        lng_val = gps.location.lng(); /* Get longtitude data */
+        alt_m_val = gps.altitude.meters();  /* Get altitude data in meters */
+        alt_valid = gps.altitude.isValid(); /* Check if valid altitude data is available */
+        hr_val = gps.time.hour(); /* Get hour */
+        min_val = gps.time.minute();  /* Get minutes */
+        sec_val = gps.time.second();  /* Get seconds */
+        time_valid = gps.time.isValid();  /* Check if valid time data is available */
+        if (!loc_valid)
+        {          
+          Serial.print("Latitude : ");
+          Serial.println("*");
+          Serial.print("Longitude : ");
+          Serial.println("*");
+        }
+        else
+        {
+          DegMinSec(lat_val);
+          Serial.print("Latitude in Decimal Degrees : ");
+          Serial.println(lat_val, 6);
+          Serial.print("Latitude in Degrees Minutes Seconds : ");
+          Serial.print(degree);
+          Serial.print("\t");
+          Serial.print(mins);
+          Serial.print("\t");
+          Serial.println(secs);
+          DegMinSec(lng_val); /* Convert the decimal degree value into degrees minutes seconds form */
+          Serial.print("Longitude in Decimal Degrees : ");
+          Serial.println(lng_val, 6);
+          Serial.print("Longitude in Degrees Minutes Seconds : ");
+          Serial.print(degree);
+          Serial.print("\t");
+          Serial.print(mins);
+          Serial.print("\t");
+          Serial.println(secs);
+        }
+        if (!alt_valid)
+        {
+          Serial.print("Altitude : ");
+          Serial.println("*");
+        }
+        else
+        {
+          Serial.print("Altitude : ");
+          Serial.println(alt_m_val, 6);    
+        }
+        if (!time_valid)
+        {
+          Serial.print("Time : ");
+          Serial.println("*");
+        }
+        else
+        {
+          char time_string[32];
+          sprintf(time_string, "Time : %02d/%02d/%02d \n", hr_val, min_val, sec_val);
+          Serial.print(time_string);    
+        }
+
+
+
+  
+  // PULSE SENSOR
+  int myBPM = pulseSensor.getBeatsPerMinute();      // Calculates BPM
+
+
+  
+  if (pulseSensor.sawStartOfBeat()) {               // Constantly test to see if a beat happened
+    Serial.println("♥  A HeartBeat Happened ! "); // If true, print a message
+    Serial.print("BPM: ");
+    Serial.println(myBPM);                        // Print the BPM value
+    }
+
+ //temprature sensor
+  temp = analogRead(tempPin);
+   // read analog volt from sensor and save to variable temp
+   temp = temp * 0.48828125;
+   // convert the analog volt to its temperature equivalent
+   Serial.print("TEMPERATURE = ");
+   Serial.print(temp); // display temperature value
+   Serial.print("*k");
+   Serial.println();
+   delay(800); // update sensor reading each one second
+
+
+//MQ3  
+  sensorValue = analogRead(MQ3pin); // read analog input pin 0
+  Serial.print("Sensor Value: ");
+  Serial.println(sensorValue);
+  float mq=sensorValue/100;
+
+
+
+   
+//cloud
+ThingSpeak.writeField(mychannelNumber,1,mq,myWriteAPIkey);
+ThingSpeak.writeField(mychannelNumber,3,temp,myWriteAPIkey);
+ThingSpeak.writeField(mychannelNumber,4,myBPM,myWriteAPIkey);
+
+//display
+display.setTextSize(1.5);
+display.setTextColor(WHITE);
+display.setCursor(50,10);
+display.println("♥ ");
+display.setCursor(0,23);
+display.println("A HeartBeat Happened");
+
+// condition of buzz
+  if(myBPM-80>85){
+  digitalWrite(buzz,HIGH);
+  delay(2000);
+  digitalWrite(buzz,LOW);
+  }
+
+if(0<myBPM<80){
+display.setCursor(55,36);
+display.println(myBPM-70);
+display.display();
+}
+else{
+display.setCursor(55,36);
+display.println("0");
+display.display();
+}
+
+display.display();
+delay(2000);
+display.clearDisplay();
+
+display.setCursor(20,20);
+display.println("body temperature");
+display.setCursor(40,30);
+display.println(temp);
+display.display();
+delay(2000);
+display.clearDisplay();
+
+// condition of buzz
+  if (mq>10){
+  digitalWrite(buzz,HIGH);
+  delay(2000);
+  digitalWrite(buzz,LOW);
+  }
+
+
+display.setCursor(20,20);
+display.println("alcohol level");
+display.setCursor(40,30);
+display.println(sensorValue/100);
+display.setCursor(65,30);
+display.println("%");
+display.display();
+delay(3000);
+display.clearDisplay();
+
+
+
+if (!loc_valid)
+        {          
+          
+display.setCursor(10,5);
+display.println("Longitude:");
+display.setCursor(10,15);
+
+display.println("*");
+display.setCursor(10,25);
+display.println("Latitude:");
+display.setCursor(10,35);
+display.println("*");
+display.setCursor(10,45);
+display.println("Time:");
+display.setCursor(10,55);
+display.println("*");
+display.display();
+delay(1000);
+display.clearDisplay();
+        }
+
+        else{
+            
+display.setCursor(5,0);
+display.println("Longitude:");
+display.setCursor(5,10);
+display.println(lng_val);
+display.setCursor(5,20);
+display.println("Latitude:");
+display.setCursor(5,30);
+display.println(lat_val);
+display.setCursor(5,40);
+display.println("Time:");
+display.setCursor(5,50);
+display.println(hr_val);
+display.setCursor(7,50);
+display.println(":");
+display.setCursor(8,50);
+display.println(min_val);
+display.setCursor(10,50);
+display.println(":");
+display.setCursor(11,50);
+display.println(sec_val);
+display.display();
+delay(1000);
+display.clearDisplay();
+        }
+
+display.clearDisplay();
+delay(1000);
+
+
+ }
+ static void smartDelay(unsigned long ms)
+{
+  unsigned long start = millis();
+  do 
+  {
+    while (GPS_SoftSerial.available())  /* Encode data read from GPS while data is available on serial port */
+      gps.encode(GPS_SoftSerial.read());
+/* Encode basically is used to parse the string received by the GPS and to store it in a buffer so that information can be extracted from it */
+  } while (millis() - start < ms);
+}
+
+void DegMinSec( double tot_val)   /* Convert data in decimal degrees into degrees minutes seconds form */
+{  
+  degree = (int)tot_val;
+  minutes = tot_val - degree;
+  seconds = 60 * minutes;
+  minutes = (int)seconds;
+  mins = (int)minutes;
+  seconds = seconds - minutes;
+  seconds = 60 * seconds;
+  secs = (int)seconds;
+}
